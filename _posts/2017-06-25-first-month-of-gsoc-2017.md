@@ -1,8 +1,6 @@
 ---
-layout: post
 title: "First month of GSoC 2017"
 tags: go go-dpi gsoc
-comments: true
 ---
 
 The first month of my Google Summer of Code is already coming to an end, and the Phase 1 evaluation is also around the corner, which coincidentally is also the last week of my contract at CERN. With that in mind, this seems like a good time to write a blog post about the project and my progress during the first month.

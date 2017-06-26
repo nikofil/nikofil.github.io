@@ -32,6 +32,162 @@ For more information about the set up of the project you may see the docs at <ht
 
 The current implementation of the library has the basic project structure down. The library exposes a simple API and classifies flows based on heuristics and wrappers. Most heuristics though are using only the ports used by the packets, so they will be redone soon in order to be port-independent. Instead, during the first month the wrappers were developed for the nDPI and libprotoident libraries. This way, while still in an early phase, the library should hypothetically offer at least the benefits of these two libraries.
 
+## Library example
+
+The library and the modules APIs aim to be very simple and straightforward to use. The library relies on the [gopacket](https://godoc.org/github.com/google/gopacket) library and its Packet structure. Once you have a Packet in your hands, it's very easy to classify it with the library.
+First you need a flow that contains the packet. There is a helper function for constructing a flow from a single packet. Simply call:
+
+```go
+flow := godpi.CreateFlowFromPacket(&packet)
+```
+
+Afterwards, classifying the flow can be done by simply calling:
+
+```go
+proto, source := classifiers.ClassifyFlow(flow)
+```
+
+This returns the guess protocol by the classifiers as well as the source (which in this case will always be go-dpi).
+
+The same thing applies for wrappers. However, for wrappers you also have to call the initialize function, and the destroy function before your program exits. All in all, the following is enough to run the wrappers:
+
+```go
+wrappers.InitializeWrappers()
+defer wrappers.DestroyWrappers()
+proto, source = wrappers.ClassifyFlow(flow)
+```
+
+A minimal example application is included below. It uses both the classifiers and wrappers to classify a simple packet capture file. Note the helpful `godpi.ReadDumpFile` function that simply returns a channel with all the packets in the file.
+
+```go
+package main
+
+import "fmt"
+import "github.com/mushorg/go-dpi"
+import "github.com/mushorg/go-dpi/classifiers"
+import "github.com/mushorg/go-dpi/wrappers"
+
+func main() {
+	packets, err := godpi.ReadDumpFile("/tmp/http.cap")
+	wrappers.InitializeWrappers()
+	defer wrappers.DestroyWrappers()
+	if err != nil {
+		fmt.Println(err)
+	} else {
+		for packet := range packets {
+			flow := godpi.CreateFlowFromPacket(&packet)
+			proto, source := classifiers.ClassifyFlow(flow)
+			if proto != godpi.Unknown {
+				fmt.Println(source, "detected protocol", proto)
+			} else {
+				fmt.Println("No detection made by classifiers")
+			}
+			proto, source = wrappers.ClassifyFlow(flow)
+			if proto != godpi.Unknown {
+				fmt.Println(source, "detected protocol", proto)
+			} else {
+				fmt.Println("No detection made by wrappers")
+			}
+		}
+	}
+}
+```
+
+Running this application (when you have the http.cap file in your /tmp folder) yields the following results:
+
+```
+go-dpi detected protocol HTTP
+No detection made by wrappers
+go-dpi detected protocol HTTP
+No detection made by wrappers
+go-dpi detected protocol HTTP
+No detection made by wrappers
+go-dpi detected protocol HTTP
+libprotoident detected protocol HTTP
+go-dpi detected protocol HTTP
+No detection made by wrappers
+go-dpi detected protocol HTTP
+libprotoident detected protocol HTTP
+go-dpi detected protocol HTTP
+No detection made by wrappers
+go-dpi detected protocol HTTP
+No detection made by wrappers
+go-dpi detected protocol HTTP
+No detection made by wrappers
+go-dpi detected protocol HTTP
+No detection made by wrappers
+go-dpi detected protocol HTTP
+No detection made by wrappers
+go-dpi detected protocol HTTP
+No detection made by wrappers
+go-dpi detected protocol DNS
+libprotoident detected protocol DNS
+go-dpi detected protocol HTTP
+No detection made by wrappers
+go-dpi detected protocol HTTP
+No detection made by wrappers
+go-dpi detected protocol HTTP
+No detection made by wrappers
+go-dpi detected protocol DNS
+nDPI detected protocol DNS
+go-dpi detected protocol HTTP
+libprotoident detected protocol HTTP
+go-dpi detected protocol HTTP
+No detection made by wrappers
+go-dpi detected protocol HTTP
+No detection made by wrappers
+go-dpi detected protocol HTTP
+No detection made by wrappers
+go-dpi detected protocol HTTP
+No detection made by wrappers
+go-dpi detected protocol HTTP
+No detection made by wrappers
+go-dpi detected protocol HTTP
+No detection made by wrappers
+go-dpi detected protocol HTTP
+No detection made by wrappers
+go-dpi detected protocol HTTP
+libprotoident detected protocol HTTP
+go-dpi detected protocol HTTP
+No detection made by wrappers
+go-dpi detected protocol HTTP
+No detection made by wrappers
+go-dpi detected protocol HTTP
+No detection made by wrappers
+go-dpi detected protocol HTTP
+No detection made by wrappers
+go-dpi detected protocol HTTP
+No detection made by wrappers
+go-dpi detected protocol HTTP
+No detection made by wrappers
+go-dpi detected protocol HTTP
+No detection made by wrappers
+go-dpi detected protocol HTTP
+No detection made by wrappers
+go-dpi detected protocol HTTP
+No detection made by wrappers
+go-dpi detected protocol HTTP
+libprotoident detected protocol HTTP
+go-dpi detected protocol HTTP
+No detection made by wrappers
+go-dpi detected protocol HTTP
+No detection made by wrappers
+go-dpi detected protocol HTTP
+No detection made by wrappers
+go-dpi detected protocol HTTP
+No detection made by wrappers
+go-dpi detected protocol HTTP
+No detection made by wrappers
+go-dpi detected protocol HTTP
+No detection made by wrappers
+go-dpi detected protocol HTTP
+No detection made by wrappers
+```
+
+The reason go-dpi is able to detect every single packet is because it uses port numbers, which won't be allowed in the future.
+
+The example app also nicely demonstrates the library. You can read about it [here](https://github.com/mushorg/go-dpi/wiki/Example-app), or read about the dockerized version [here](https://github.com/mushorg/go-dpi/wiki/Docker-image).
+
 ## Results
 
 As the integration with the glutton honeypot isn't working yet, for the testing of the library mostly the [sample captures from the Wireshark](https://wiki.wireshark.org/SampleCaptures) site were used. Live capture from a device was also supported, but it's easier to test for a specific protocol by using the appropriate capture file.

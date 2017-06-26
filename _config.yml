@@ -34,6 +34,13 @@ defaults:
     values:
       layout: "project"
       # header-img: "img/home-bg.jpg"
+  -
+    scope:
+      path: ""
+      type: "posts"
+    values:
+      layout: "post"
+      # header-img: "img/home-bg.jpg"
 
 # Prose Settings
 prose:

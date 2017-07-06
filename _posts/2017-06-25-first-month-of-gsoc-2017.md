@@ -214,7 +214,7 @@ Using the example app, we can see both the classifications based on the heuristi
 
 ## Plans for the future
 
-With the wrappers mostly out of the way, the next task will be to focus on homemade classifiers for each protocol: This will be done first by creating heuristics, and then if it's feasible by using machine learnig. The heuristics should hopefully cover the weaknesses found on the wrappers in order to have a more complete library. Also, they should generally be faster than deferring the work to a library. Machine learning on the other hand might inherit the weaknesses of the captures that will be used for training, so for the protocols where there isn't enough data available it might not lead to good results.
+With the wrappers mostly out of the way, the next task will be to focus on homemade classifiers for each protocol: This will be done first by creating heuristics, and then if it's feasible by using machine learning. The heuristics should hopefully cover the weaknesses found on the wrappers in order to have a more complete library. Also, they should generally be faster than deferring the work to a library. Machine learning on the other hand might inherit the weaknesses of the captures that will be used for training, so for the protocols where there isn't enough data available it might not lead to good results.
 
 There is also the challenge of the detection of tunneled protocols over SSL, such as HTTPS. In order to detect HTTPS, we will probably have to first classify a flow as SSL and once the handshake is over figure out about the protocol underneath and classify it as the more specific HTTPS. It's not clear yet if the structure of the project will need to change to support this.
 

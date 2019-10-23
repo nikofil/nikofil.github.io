@@ -51,7 +51,7 @@ This returns the guess protocol by the classifiers as well as the source (which 
 
 The same thing applies for wrappers. However, for wrappers you also have to call the initialize function, and the destroy function before your program exits. All in all, the following is enough to run the wrappers:
 
-```go
+```
 wrappers.InitializeWrappers()
 defer wrappers.DestroyWrappers()
 proto, source = wrappers.ClassifyFlow(flow)
@@ -59,7 +59,7 @@ proto, source = wrappers.ClassifyFlow(flow)
 
 A minimal example application is included below. It uses both the classifiers and wrappers to classify a simple packet capture file. Note the helpful `godpi.ReadDumpFile` function that simply returns a channel with all the packets in the file.
 
-```go
+```
 package main
 
 import "fmt"

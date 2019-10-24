@@ -1,154 +1,114 @@
+# Welcome to Jekyll!
+#
+# This config file is meant for settings that affect your whole blog, values
+# which you are expected to set up once and rarely edit after that. If you find
+# yourself editing this file very often, consider using Jekyll's data files
+# feature for the data you need to update frequently.
+#
+# For technical reasons, this file is *NOT* reloaded automatically when you use
+# 'bundle exec jekyll serve'. If you change this file, please restart the server process.
+
 # Site settings
+# These are used to personalize your new site. If you look in the HTML files,
+# you will see them accessed via {{ site.title }}, {{ site.email }}, and so on.
+# You can create any custom variable you would like, and they will be accessible
+# in the templates via {{ site.myvariable }}.
 title: nikofil's blog
-description: "Blog about coding and stuff."
-url: "https://nikofil.github.io"
-
-# Secondary Parameters
-baseurl: ""
-# header-img: img/home-bg.jpg
-headercolor: "#000000"
-# logo: /project-pages/img/logos/Project-Pages-New-Logo-Inverted.png
-
-# Tertiary Parameters
+email:
+description: >- # this means to ignore newlines until "baseurl:"
+  I want to be the very best, like no one ever was.
+  Besides that, I enjoy coding, hacking, spending days on editing my rc files and occasionally hopefully writing about these things.
 github_username: nikofil
-# project_repository: project-pages
-disqus_shortname: nikofil-github-io
-g-analytics: UA-101392891-1
-altmetric: true
+minimal_mistakes_skin: dark
+search: true
+repository: "nikofil/nikofil.github.io"
 
 # Build settings
-gems: [jekyll-paginate]
 markdown: kramdown
-highlighter: rouge
-permalink: pretty
-paginate: 10
-exclude: ["less","node_modules","Gruntfile.js","package.json","README.md"]
+remote_theme: mmistakes/minimal-mistakes
+# Outputting
+permalink: /:categories/:title/
+paginate: 5 # amount of posts to show
+paginate_path: /page:num/
+timezone: # https://en.wikipedia.org/wiki/List_of_tz_database_time_zones
 
-# Jekyll Settings
+include:
+  - _pages
+
+comments:
+  provider: disqus
+  disqus:
+    shortname: nikofil-github-io
+
+analytics:
+  provider: google
+  google:
+    tracking_id: "UA-101392891-1"
+    anonymize_ip: false
+
+# Exclude from processing.
+# The following items will not be processed, by default. Create a custom list
+# to override the default setting.
+# exclude:
+#   - Gemfile
+#   - Gemfile.lock
+#   - node_modules
+#   - vendor/bundle/
+#   - vendor/cache/
+#   - vendor/gems/
+#   - vendor/ruby/
+
+# Plugins (previously gems:)
+plugins:
+  - jekyll-paginate
+  - jekyll-sitemap
+  - jekyll-gist
+  - jekyll-feed
+  - jekyll-include-cache
+
+author:
+  name   : "Nikos Filippakis"
+  avatar : "https://avatars3.githubusercontent.com/u/5767669?s=460&v=4"
+  bio    : "I sort of have a grasp on what I'm doing on a day to day basis."
+  links:
+    - label: "Website"
+      icon: "fas fa-fw fa-link"
+      url: "https://nikofil.github.io"
+    - label: "GitHub"
+      icon: "fab fa-fw fa-github"
+      url: "https://github.com/nikofil"
+
+footer:
+  links:
+    - label: "GitHub"
+      icon: "fab fa-fw fa-github"
+      url: "https://github.com/nikofil"
 
 defaults:
-  -
-    scope:
-      path: "projects"
-      type: "pages"
-    values:
-      layout: "project"
-      # header-img: "img/home-bg.jpg"
-  -
-    scope:
+  # _posts
+  - scope:
       path: ""
-      type: "posts"
+      type: posts
     values:
-      layout: "post"
-      # header-img: "img/home-bg.jpg"
+      layout: single
+      toc: true
+      toc_label: Contents
+      author_profile: true
+      read_time: true
+      comments: true
+      share: true
+      related: true
+  # _pages
+  - scope:
+      path: "_pages"
+      type: pages
+    values:
+      layout: single
+      author_profile: true
 
-# Prose Settings
-prose:
-  ignore: ['feed.xml', '/stl', '/ply', '/js', '/plugin', '/lib', '/projectors', '_layouts', '/_includes', 'Gruntfile.js', 'package.json', 'proselinks.jsonp', 'ppanchor.matin', '.gitignore', '/search', '/css', '/img', 'favicon.png','_data/*.json','LICENSES.md','README.md','colorscheme.scss','members.html','mentions.html','index.html']
-  siteurl: 'https://nikofil.github.io'
-  ispp: true
-  media: 'img'
-  metadata:
-    projects:
-      - name: "title"
-        field:
-          element: "text"
-          label: "Title"
-          value: ""
-      - name: "description"
-        field:
-          element: "text"
-          label: "Description"
-          value: ""
-      - name: "category"
-        field:
-          element: "text"
-          label: "Project"
-          value: ""           
-    _posts:
-      - name: "subtitle"
-        field:
-          element: "text"
-          label: "Sub-Title (Short Description)"
-          value: ""
-      - name: "layout"
-        field:
-          element: "select"
-          label: "Choose Layout"
-          placeholder: "Layouts"
-          options:
-            - name: "Post"
-              value: "post"
-            - name: "Slide"
-              value: "slide"
-            - name: "Projector"
-              value: "projector"
-            - name: "Notebook"
-              value: "notebook"
-            - name: "Ply Surface"
-              value: "plysurface"
-      - name: "title"
-        field:
-          element: "text"
-          label: "Title"
-          value: ""
-      - name: "author"
-        field:
-          element: "text"
-          label: "Author"
-          value: ""
-      - name: "tags"
-        field:
-          element: "text"
-          label: "Tags (seperate with whitespace)"
-          value: ""
-      - name: "category"
-        field:
-          element: "text"
-          label: "Project"
-          value: ""    
-      - name: "vertical"
-        field:
-          element: "hidden"
-          value: </section><section markdown="1">
-      - name: "theme"
-        field:
-          element: "select"
-          label: "Theme (Slide)"
-          placeholder: "Theme (Slide)"
-          options:
-            - name: "Beige"
-              value: "beige"
-            - name: "Blood"
-              value: "blood"
-            - name: "Moon"
-              value: "moon"          
-            - name: "Night"
-              value: "night"
-            - name: "Sky"
-              value: "sky"
-            - name: "Solarized"
-              value: "solarized"             
-      - name: "trans"
-        field:
-          element: "select"
-          label: "Transition (Slide)"
-          placeholder: "Transition (Slide)"
-          options:
-            - name: "Cube"
-              value: "cube"
-            - name: "Page"
-              value: "page"
-            - name: "Concave"
-              value: "concave"          
-            - name: "Linear"
-              value: "linear"
-            - name: "Fade"
-              value: "fade"
-            - name: "None"
-              value: "none"             
-      - name: "visualworkflow"
-        field:
-          element: "checkbox"
-          label: "Visual Workflow Chart (Some Layouts)"
-          value: "true"
+category_archive:
+  type: liquid
+  path: /categories/
+tag_archive:
+  type: liquid
+  path: /tags/

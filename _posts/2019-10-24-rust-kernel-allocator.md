@@ -71,7 +71,7 @@ Simple enough to start with - what's difficult about it?
 
 * First, some of the memory areas that we get back are already in use by the kernel. Multiboot has loaded our kernel into the start, but that's still a usable memory area. Of course you probably don't want to hand over the memory that stores your kernel when allocating something and getting your code overwritten. That leads to some very nasty bugs. We can use `boot_info.end_address()` to get the end address of our kernel so we can only give out pages after its end.
 * Second, we want to be a bit smart about this and give back pages (or frames) of a fixed size (here, 0x1000 or 4096 bytes). We maybe could get away with using a different page size, but some things that (ie. page tables) were made with that amount of memory in mind, so let's with go the easy way.
-* Third, this struct needs to be static (for Rust to be able to use it from its global allocator) and also thread safe for the same reason. As we make sure the global allocator implementation is thread safe using a Mutex we can just assure Rust that no thread-unsafe tomfoolery will take place here.
+* Third, this struct needs to be static (for Rust to be able to use it from its global allocator) and also can be transferred across threads for the same reason. Rust complains about us sending a `MemoryAreaIter` accross threads (because it contains pointers) but we can just assure it that it's okay by implementing the `Send` marker for our frame allocator.
 
 To do these things, we iterate through the available memory areas. We make sure we have enough memory for a frame at each step, starting after the end of our kernel and having an address aligned with our page size. If we can't meet that criteria we go to the next memory area, until we have none left.
 
@@ -91,7 +91,7 @@ pub struct SimpleAllocator {
     next_page: usize, // next page no. in this area to return
 }
 
-// shh it's ok we only access this from a thread-safe struct
+// shh it's ok pointers are thread-safe
 unsafe impl core::marker::Send for SimpleAllocator {} 
 
 impl SimpleAllocator {

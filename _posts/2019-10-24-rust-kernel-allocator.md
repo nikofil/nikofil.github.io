@@ -7,7 +7,7 @@ This relates to my very-much-in-development kernel in Rust: <https://github.com/
 
 I'm going to be writing this at the same time of implementing it on my own kernel. Let's see how it goes. :)
 
-If you're wondering how I managed to get this far without knowing anything about a kernel, my code is based on the excellent blog posts over at TODO. Mostly the first, lower level edition.
+If you're wondering how I managed to get this far without knowing anything about a kernel, my code is based on the excellent blog posts over at <https://os.phil-opp.com>. Mostly the first, lower level edition.
 
 ## Part 0: Allocating a page
 
@@ -46,7 +46,12 @@ We can now read that first argument as a `u64` which we need to convert to a `us
 
 ```rust
     let boot_info: &multiboot2::BootInformation = unsafe {
-        multiboot2::load(mem::PhysAddr::new(multiboot_info_addr).to_virt().unwrap().addr() as usize)
+        multiboot2::load(
+            mem::PhysAddr::new(multiboot_info_addr)
+                .to_virt()
+                .unwrap()
+                .addr() as usize
+        )
     };
 ```
 
@@ -86,7 +91,8 @@ pub struct SimpleAllocator {
     next_page: usize, // next page no. in this area to return
 }
 
-unsafe impl core::marker::Send for SimpleAllocator {} // shh it's ok we only access this from a thread-safe struct
+// shh it's ok we only access this from a thread-safe struct
+unsafe impl core::marker::Send for SimpleAllocator {} 
 
 impl SimpleAllocator {
     pub unsafe fn new(boot_info: &BootInformation) -> SimpleAllocator {
@@ -110,10 +116,13 @@ impl SimpleAllocator {
             // get base addr and length for current area
             let base_addr = mem_area.base_addr;
             let area_len = mem_area.length;
-            let mem_start = max(base_addr, self.kernel_end_phys); // start after kernel end
+            // start after kernel end
+            let mem_start = max(base_addr, self.kernel_end_phys);
             let mem_end = base_addr + area_len;
-            let start_addr = ((mem_start + FRAME_SIZE - 1) / FRAME_SIZE) * FRAME_SIZE; // memory start addr aligned with page size
-            let end_addr = (mem_end / FRAME_SIZE) * FRAME_SIZE; // memory end addr aligned with page size
+            // memory start addr aligned with page size
+            let start_addr = ((mem_start + FRAME_SIZE - 1) / FRAME_SIZE) * FRAME_SIZE;
+            // memory end addr aligned with page size
+            let end_addr = (mem_end / FRAME_SIZE) * FRAME_SIZE;
             self.cur_area = Some((start_addr, end_addr));
         } else {
             self.cur_area = None; // out of mem areas :(
@@ -123,9 +132,11 @@ impl SimpleAllocator {
 
 impl FrameSingleAllocator for SimpleAllocator {
     unsafe fn allocate(&mut self) -> Option<PhysAddr> {
-        let (start_addr, end_addr) = self.cur_area?; // get current area start and end addr if we still have an area left
+        // get current area start and end addr if we still have an area left
+        let (start_addr, end_addr) = self.cur_area?;
         let frame = PhysAddr::new(start_addr + (self.next_page as u64 * FRAME_SIZE));
-        if frame.addr() + (FRAME_SIZE as u64) < end_addr { // return a page from this area
+        // return a page from this area
+        if frame.addr() + (FRAME_SIZE as u64) < end_addr {
             self.next_page += 1;
             crate::println!("allocating woo");
             Some(frame)

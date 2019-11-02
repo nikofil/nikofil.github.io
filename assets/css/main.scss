@@ -1,0 +1,11 @@
+---
+---
+
+@charset "utf-8";
+
+$right-sidebar-width: 240px !default;
+$type-size-5: 0.875em !default; // ~14px
+$type-size-6: 0.625em !default; // ~10px
+
+@import "minimal-mistakes/skins/{{ site.minimal_mistakes_skin | default: 'default' }}"; // skin
+@import "minimal-mistakes"; // main partials

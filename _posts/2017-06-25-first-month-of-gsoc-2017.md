@@ -1,6 +1,5 @@
 ---
 title: "First month of GSoC 2017"
-author: "Nikos Filippakis"
 tags: go go-dpi gsoc
 ---
 

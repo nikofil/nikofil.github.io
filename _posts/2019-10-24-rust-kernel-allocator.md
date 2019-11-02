@@ -1,6 +1,5 @@
 ---
 title: "Rust-OS Kernel buddy allocator"
-author: "Nikos Filippakis"
 tags: rust kernel allocator
 ---
 

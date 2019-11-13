@@ -238,6 +238,104 @@ Having created this struct we can go ahead and implement the actual global alloc
 (at this point I added the great `if_chain` crate to my project to deal with long chains of `if let`s)
 
 ```rust
+unsafe impl GlobalAlloc for Allocator {
+    unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
+        if_chain! {
+            // try locking the free_frames mutex (this locking fails when dealloc needs to allocate
+            // more space for its Vec and calls this as it already holds this lock!)
+            if let Some(ref mut x) = ALLOCATOR_INFO.free_frames.try_lock();
+            // get as mutable
+            if let Some(ref mut free) = x.as_mut();
+            // get last page (if it exists)
+            if let Some(page) = free.pop();
+            // if a page exists
+            if let Some(virt) = page.to_virt();
+            // return the page
+            then {
+                crate::println!("Reusing! ^_^ {:x}", virt.addr());
+                return virt.to_ref();
+            }
+        }
+        if_chain! {
+            // lock the frame allocator
+            if let Some(ref mut allocator) = ALLOCATOR_INFO.frame_allocator.lock().as_mut();
+            // get a physical page from it
+            if let Some(page) = allocator.allocate();
+            // convert it to virtual (add 0xC0000000)
+            if let Some(virt) = page.to_virt();
+            // return the page
+            then {
+                crate::println!("Allocated! ^_^ {:x}", virt.addr());
+                return virt.to_ref();
+            }
+        }
+        null_mut()
+    }
+
+    unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
+        crate::println!("Deallocating: {:x}", ptr as u64);
+        if_chain! {
+            // try converting the deallocated virtual page address to the physical address
+            if let Some((phys_addr, _)) = VirtAddr::new(ptr as u64).to_phys();
+            // lock the free frames list
+            if let Some(ref mut free) = ALLOCATOR_INFO.free_frames.lock().as_mut();
+            // add the physical address to the free frames list
+            then {
+                free.push(phys_addr);
+            }
+        }
+        crate::println!("Deallocated! v_v {:x}", ptr as u64);
+    }
+}
 ```
 
 ## Testing the global allocator
+
+Finally we can actually allocate stuff! Let's see how the global allocator behaves in an example.
+
+```rust
+#[global_allocator]
+static ALLOCATOR: global_alloc::Allocator = global_alloc::Allocator;
+
+pub fn start(boot_info: &'static BootInformation) -> ! {
+    init_gdt();
+    unsafe {
+        let alloc = frame_alloc::SimpleAllocator::new(&boot_info);
+        frame_alloc::BOOTINFO_ALLOCATOR.replace(alloc);
+        global_alloc::init_global_alloc(frame_alloc::BOOTINFO_ALLOCATOR.as_mut().unwrap());
+    }
+    {
+        println!("Before first Vec");
+        let mut x: Vec<u32> = Vec::new();
+        x.push(123);
+        println!("{}", x[0]);
+    }
+    {
+        println!("Before second Vec");
+        let mut x: Vec<u32> = Vec::new();
+        x.push(456);
+        println!("{}", x[0]);
+    }
+    println!("After second Vec");
+```
+
+This outputs (with comments):
+```
+Before first Vec
+- Going to next memory area # frame allocator proceeds to next memory area
+- Allocated new page        # frame allocator gives the page to global allocator
+* Allocated! ^_^ c04ae000   # global allocator gives us the virtual addr of that page
+123
+* Deallocating: c04ae000    # we give the page back to the allocator
+- Allocated new page        # a new page is allocated to hold the Vec with the freed page
+* Allocated! ^_^ c04af0000  # that page is given to the allocator, by the allocator!
+* Deallocated! v_v c04ae000 # finally the page we gave back is added to the free list
+Before second Vec
+* Reusing! ^_^ c04ae000     # we need a new page now but we already have one in the free list
+456
+* Deallocating: c04ae000    # we give that page back to the allocator for a second time
+* Deallocated! v_v c04ae000 # it has been added to the free list successfully
+After second Vec
+```
+
+All works well! :) We can now proceed (in the next post) with making our allocator smarter so that we don't waste an entire page every time we want to allocate anything and so that we can allocate blocks larger than 4096 bytes.

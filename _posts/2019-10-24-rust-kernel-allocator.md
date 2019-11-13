@@ -1,5 +1,5 @@
 ---
-title: "Rust-OS Kernel buddy allocator"
+title: "Rust-OS Kernel buddy allocator - Part 1: Creating a simple allocator"
 tags: rust kernel allocator
 ---
 
@@ -9,7 +9,7 @@ I'm going to be writing this at the same time of implementing it on my own kerne
 
 If you're wondering how I managed to get this far without knowing anything about a kernel, my code is based on the excellent blog posts over at <https://os.phil-opp.com>. Mostly the first, lower level edition.
 
-## Part 0: Allocating a page
+## Allocating a page
 
 Before doing implementing any fancy memory allocation algorithm, we need to know how much memory is available. Unfortunately this information is only available in the very early stages of booting so we have to modify our crappy boot code to pass that information over. Fortunately, however, we are using multiboot2 for our bootloader which gives us a pointer to a struct with all this information in ebx.
 
@@ -70,7 +70,7 @@ pub trait FrameSingleAllocator: Send {
 Simple enough to start with - what's difficult about it?
 
 * First, some of the memory areas that we get back are already in use by the kernel. Multiboot has loaded our kernel into the start, but that's still a usable memory area. Of course you probably don't want to hand over the memory that stores your kernel when allocating something and getting your code overwritten. That leads to some very nasty bugs. We can use `boot_info.end_address()` to get the end address of our kernel so we can only give out pages after its end.
-* Second, we want to be a bit smart about this and give back pages (or frames) of a fixed size (here, 0x1000 or 4096 bytes). We maybe could get away with using a different page size, but some things that (ie. page tables) were made with that amount of memory in mind, so let's with go the easy way.
+* Second, we want to be a bit smart about this and give back pages (or frames) of a fixed size (here, 0x1000 or 4096 bytes). We maybe could get away with using a different page size, but some things that were made with that amount of memory in mind (ie. page tables), so let's with go the easy way.
 * Third, this struct needs to be static (for Rust to be able to use it from its global allocator) and also can be transferred across threads for the same reason. Rust complains about us sending a `MemoryAreaIter` accross threads (because it contains pointers) but we can just assure it that it's okay by implementing the `Send` marker for our frame allocator.
 
 To do these things, we iterate through the available memory areas. We make sure we have enough memory for a frame at each step, starting after the end of our kernel and having an address aligned with our page size. If we can't meet that criteria we go to the next memory area, until we have none left.
@@ -138,13 +138,106 @@ impl FrameSingleAllocator for SimpleAllocator {
         // return a page from this area
         if frame.addr() + (FRAME_SIZE as u64) < end_addr {
             self.next_page += 1;
-            crate::println!("allocating woo");
+            crate::println!("- Allocated new page");
             Some(frame)
         } else { // go to next area and try again
             self.next_area();
-            crate::println!("woah next area");
+            crate::println!("- Going to next memory area");
             self.allocate()
         }
     }
 }
 ```
+
+## Getting Rust to use our allocator
+
+Alright Rust, I made your allocator! Let me use the heap now!
+
+```rust
+    let mut x: Vec<u8> = Vec::new();
+    x.push(0);
+```
+
+Of course, Rust doesn't appreciate all of our effort:
+
+```
+error: no global memory allocator found but one is required; link to std or add `#[global_allocator]` to a static item that implements the GlobalAlloc trait.
+
+error: `#[alloc_error_handler]` function required, but not found
+
+error: aborting due to 2 previous errors
+```
+
+We need to hold its hand and tell it how to use our allocator by making a struct that implements `GlobalAlloc`. We also need to define an error handler for when things go wrong. That sounds fairly simple, actually!
+
+Also, this allocator needs to be static, naturally, as having it go out of scope in the middle of our program would be no good.
+
+Alright, let's start with the easy part: Handling errors! At this point we can't do much to handle an allocation error, so we just panic.
+
+```rust
+#[alloc_error_handler]
+fn alloc_error_handler(layout: alloc::alloc::Layout) -> ! {
+    panic!("allocation error: {:?}", layout)
+}
+```
+
+In fact, the `-> !` return type says that this function is never supposed to return (so, either an infinite loop or an exit) so I don't think we're supposed to handle anything anyway. Great! Now let's do the actually useful part. We start by creating a struct that implements `GlobalAlloc`.
+
+```rust
+pub struct Allocator;
+
+unsafe impl GlobalAlloc for Allocator {
+    unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
+        unimplemented!()
+    }
+
+    unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
+        unimplemented!()
+    }
+}
+```
+
+The interface is as simple as can be. For allocating we have the required layout (the required size and alignment of the returned memory area) and we return the (virtual) address of that area. For de-allocating we are given a pointer and the layout of the freed area.
+
+How can we keep track of freed pages, though? Our frame allocator is simply an iterator that iterates over a static struct (the static `BootInformation` given to us by the bootloader). We can't just add pages back to it. A `Vec` would be ideal here but, well, we need an allocator to use the `Vec` that we want for implementing our allocator!
+
+Actually, that's slightly misleading. We only need the `Vec` for freeing a page and we don't need to free a page until after we have allocated a page. So this seemingly circular problem can be broken down into two simple steps:
+1. Set up the allocator to only be able to allocate pages
+2. Allocate a `Vec` for keeping free pages, after which we can also free pages
+
+I created an additional static struct to help deal with this. It has two fields: 
+* `frame_allocator` contains the allocator that we created previously and is initialized on the first step
+* `free_frames` is the `Vec<PhysAddr>` which contains the freed frames and is initialized on the second step
+Both are protected by a `Mutex` so that Rust doesn't complain (rightly so, as we might someday want to have multiple threads!)
+
+Finally the method `init_global_alloc` performs both steps: It initializes the `frame_allocator` member after which Rust should be able to allocate on the heap. After that it performs its first allocation: an empty `Vec`!
+
+```rust
+struct AllocatorInfo {
+    frame_allocator: Mutex<Option<&'static mut dyn FrameSingleAllocator>>,
+    free_frames: Mutex<Option<Vec<PhysAddr>>>,
+}
+
+lazy_static! {
+    static ref ALLOCATOR_INFO: AllocatorInfo = AllocatorInfo {
+        frame_allocator: Mutex::new(None),
+        free_frames: Mutex::new(None),
+    };
+}
+
+pub fn init_global_alloc(frame_alloc: &'static mut dyn FrameSingleAllocator) {
+    ALLOCATOR_INFO.frame_allocator.lock().replace(frame_alloc);
+    ALLOCATOR_INFO
+        .free_frames
+        .lock()
+        .replace(Vec::with_capacity(0));
+}
+```
+
+Having created this struct we can go ahead and implement the actual global allocator:
+(at this point I added the great `if_chain` crate to my project to deal with long chains of `if let`s)
+
+```rust
+```
+
+## Testing the global allocator

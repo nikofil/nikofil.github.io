@@ -243,9 +243,9 @@ unsafe impl GlobalAlloc for Allocator {
         if_chain! {
             // try locking the free_frames mutex (this locking fails when dealloc needs to allocate
             // more space for its Vec and calls this as it already holds this lock!)
-            if let Some(ref mut x) = ALLOCATOR_INFO.free_frames.try_lock();
+            if let Some(ref mut guard) = ALLOCATOR_INFO.free_frames.try_lock();
             // get as mutable
-            if let Some(ref mut free) = x.as_mut();
+            if let Some(ref mut free) = guard.as_mut();
             // get last page (if it exists)
             if let Some(page) = free.pop();
             // if a page exists

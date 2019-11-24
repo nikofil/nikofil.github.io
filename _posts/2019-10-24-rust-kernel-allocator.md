@@ -5,8 +5,6 @@ tags: rust kernel allocator
 
 This relates to my very-much-in-development kernel in Rust: <https://github.com/nikofil/rust-os>
 
-I'm going to be writing this at the same time of implementing it on my own kernel. Let's see how it goes. :)
-
 If you're wondering how I managed to get this far without knowing anything about a kernel, my code is based on the excellent blog posts over at <https://os.phil-opp.com>. Mostly the first, lower level edition.
 
 ## Allocating a page

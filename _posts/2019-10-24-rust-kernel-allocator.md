@@ -1,5 +1,6 @@
 ---
 title: "Rust-OS Kernel buddy allocator - Part 1: Creating a simple allocator"
+categories: Kernel Rust Coding
 tags: rust kernel allocator
 ---
 

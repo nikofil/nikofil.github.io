@@ -3,6 +3,8 @@ permalink: /about/
 title: "About"
 ---
 
-Tempor velit sint sunt ipsum tempor enim ad qui ullamco. Est dolore anim ad velit duis dolore minim sunt aliquip amet commodo labore. Ut eu pariatur aute ea aute excepteur laborum. Esse ea esse excepteur minim mollit qui cillum excepteur ex dolore magna. Labore deserunt fugiat incididunt incididunt sint ea. Consequat dolore aute laboris quis proident quis non et est consectetur ex eiusmod sit culpa.
+Avid Rust fanboy until something else grabs my interest and occasional wannabe hacker. I enjoy boxing, snowboarding, climbing, learning new technologies and spending hours on my [dotfiles](https://github.com/nikofil/dotfiles). I like breaking things more than fixing them.
 
-Cupidatat ea do et in excepteur in. Ad nostrud ut est esse eu duis ea sunt eiusmod. Aliquip tempor veniam sint elit fugiat. Velit incididunt laboris amet incididunt labore dolore irure velit excepteur commodo deserunt laborum. Consectetur eu fugiat veniam veniam Lorem labore magna eiusmod. Ea occaecat reprehenderit pariatur consectetur minim labore ut aliquip.
+This blog is for whenever I'm working on something that I consider might be interesting / I just want to write words about.
+
+Currently working for CERN's Computer Security Team, primarily on the infrastructure that scans the network and alerts users for issues.

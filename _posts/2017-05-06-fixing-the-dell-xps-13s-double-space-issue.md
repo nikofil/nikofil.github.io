@@ -1,5 +1,6 @@
 ---
 title: "Fixing the Dell XPS 13's double space issue (with Linux kernel modules!)"
+categories: Kernel C
 tags: kernel c drivers
 ---
 Some days ago I bought the Dell XPS 13 9350. One of the most popular laptops, still quite expensive two years after its launch. While setting it up, I soon found out about a very distracting issue: The space key would occasionally produce two spaces instead of one, and it happened usually when typing fast. It didn't occur very often, but it was still quite annoying when it did, and it wasn't what I expected from a machine of that price tag and fame.

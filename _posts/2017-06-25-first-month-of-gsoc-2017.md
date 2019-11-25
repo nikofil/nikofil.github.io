@@ -1,5 +1,6 @@
 ---
 title: "First month of GSoC 2017"
+categories: GSoC Go Coding
 tags: go go-dpi gsoc
 ---
 

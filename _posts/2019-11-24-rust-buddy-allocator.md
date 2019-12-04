@@ -4,7 +4,7 @@ categories: Kernel Rust Coding
 tags: rust kernel buddy allocator
 ---
 
-This is a continuation of my [Rust kernel allocator post]({% post_url 2019-10-24-rust-kernel-allocator %}).
+Previous post: [Part 1: Creating a simple allocator]({% post_url 2019-10-24-rust-kernel-allocator %}).
 
 If you're wondering how I managed to get this far without knowing anything about a kernel, my code is based on the excellent blog posts over at <https://os.phil-opp.com>. Mostly the first, lower level edition.
 
@@ -269,6 +269,4 @@ impl BuddyAllocator {
 
 That was easy enough! Now we just need to be able to construct one of these (or more)...
 
-## Constructing buddy allocators in a sort of sane manner
-
-// TODO
+Next post: [Part 3: Allocator manager]({% post_url 2019-12-04-rust-buddy-allocator-manager %})

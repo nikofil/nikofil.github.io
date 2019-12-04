@@ -338,3 +338,5 @@ After second Vec
 ```
 
 All works well! :) We can now proceed (in the next post) with making our allocator smarter so that we don't waste an entire page every time we want to allocate anything and so that we can allocate blocks larger than 4096 bytes.
+
+Next post: [Part 2: Buddy allocator]({% post_url 2019-11-24-rust-buddy-allocator %})

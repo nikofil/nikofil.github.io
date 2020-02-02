@@ -6,6 +6,8 @@ tags: rust kernel userspace
 
 This post documents my attempts to manage to jump (or return?) from kernel-space to usermode in my Rust kernel so that it can do what a kernel is supposed to actually do: give the CPU to user programs. That's pretty exciting! In the next part, we'll even take control back from the programs so that we can implement a scheduler.
 
+Source code: <https://github.com/nikofil/rust-os>
+
 
 ## What the hell is a usermode?
 

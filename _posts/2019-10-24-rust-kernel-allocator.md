@@ -4,7 +4,7 @@ categories: Kernel Rust Coding
 tags: rust kernel allocator
 ---
 
-This relates to my very-much-in-development kernel in Rust: <https://github.com/nikofil/rust-os>
+This relates to my very-much-in-development kernel in Rust: <https://github.com/nikofil/rust-os> 
 
 If you're wondering how I managed to get this far without knowing anything about a kernel, my code is based on the excellent blog posts over at <https://os.phil-opp.com>. Mostly the first, lower level edition.
 
@@ -209,7 +209,7 @@ I created an additional static struct to help deal with this. It has two fields:
 * `free_frames` is the `Vec<PhysAddr>` which contains the freed frames and is initialized on the second step
 Both are protected by a `Mutex` so that Rust doesn't complain (rightly so, as we might someday want to have multiple threads!)
 
-Finally the method `init_global_alloc` performs both steps: It initializes the `frame_allocator` member after which Rust should be able to allocate on the heap. After that it performs its first allocation: an empty `Vec`!
+Finally the method `init_global_alloc` performs both steps: It initializes the `frame_allocator` member after which Rust should be able to allocate on the heap. After that it performs its first allocation: a `Vec` with capacity 200! This allows our `free_frames` list to store several frame addresses before needing a reallocation.
 
 ```rust
 struct AllocatorInfo {
@@ -225,11 +225,16 @@ lazy_static! {
 }
 
 pub fn init_global_alloc(frame_alloc: &'static mut dyn FrameSingleAllocator) {
+    // set the frame allocator as our current allocator
     ALLOCATOR_INFO.frame_allocator.lock().replace(frame_alloc);
+    let old_free_frames = ALLOCATOR_INFO.free_frames.lock().take();
+    // avoid dropping this inside a lock so we don't trigger a free
+    // while holding the lock
+    drop(old_free_frames);
     ALLOCATOR_INFO
         .free_frames
         .lock()
-        .replace(Vec::with_capacity(0));
+        .replace(Vec::with_capacity(200));
 }
 ```
 
@@ -276,8 +281,11 @@ unsafe impl GlobalAlloc for Allocator {
         if_chain! {
             // try converting the deallocated virtual page address to the physical address
             if let Some((phys_addr, _)) = VirtAddr::new(ptr as u64).to_phys();
-            // lock the free frames list
-            if let Some(ref mut free) = ALLOCATOR_INFO.free_frames.lock().as_mut();
+            // try locking the free frames list (this fails if we've already locked free_frames
+            // for some reason, i.e. if we're in the middle of reallocating it due to a push to it)
+            if let Some(ref mut guard) = ALLOCATOR_INFO.free_frames.try_lock();
+            // get as mutable
+            if let Some(ref mut free) = guard.as_mut();
             // add the physical address to the free frames list
             then {
                 free.push(phys_addr);

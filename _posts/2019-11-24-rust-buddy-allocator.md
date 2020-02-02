@@ -6,6 +6,8 @@ tags: rust kernel buddy allocator
 
 Previous post: [Part 1: Creating a simple allocator]({% post_url 2019-10-24-rust-kernel-allocator %}).
 
+Source code: <https://github.com/nikofil/rust-os>
+
 If you're wondering how I managed to get this far without knowing anything about a kernel, my code is based on the excellent blog posts over at <https://os.phil-opp.com>. Mostly the first, lower level edition.
 
 ## Wtf is a buddy allocator

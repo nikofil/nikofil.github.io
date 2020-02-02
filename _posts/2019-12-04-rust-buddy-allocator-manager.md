@@ -6,6 +6,8 @@ tags: rust kernel buddy allocator
 
 Previous post: [Part 2: Buddy allocator]({% post_url 2019-11-24-rust-buddy-allocator %})
 
+Source code: <https://github.com/nikofil/rust-os>
+
 We can use a single buddy allocator, given a continuous block of memory with the size of a power of 2. It's very probably however that this would waste a lot of memory, as our entire memory won't be a single block that is a power of 2. So what can we do?
 
 Another issue that I ran into was the following: a buddy allocator contains vectors. A vector is a dynamic structure, which means some times it needs to resize when we push things to it, which means it might need to call the allocator itself. We've been to get around this issue with our frame allocator (since we only needed to allocate when de-allocating a block to the free list, and not while allocating). However in this case we have an allocation-in-allocation. Due to the allocator being behind a `RwLock` so that we can make sure no two threads / processes / whatever we decide to call them can mess up its state at the same time, if we need to allocate more space for a vec during our allocation, we end up in the unfavorable position of having to lock this lock while already holding it. This could be done through some horrible hack, or we could solve both things at once:

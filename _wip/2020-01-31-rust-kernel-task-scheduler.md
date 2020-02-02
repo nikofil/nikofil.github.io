@@ -4,6 +4,8 @@ categories: Kernel Rust Coding
 tags: rust kernel userspace
 ---
 
+Source code: <https://github.com/nikofil/rust-os>
+
 TODO
 
  - the entire scheduler.rs

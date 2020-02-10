@@ -112,81 +112,114 @@ pub unsafe fn enable(&self) {
 `cr3` is now set! The virtual memory above `0xC0000000` will be exactly the same, but there's now memory mapped to `0x400000` and `0x800000`!
 
 
-## GDT
+## Setting the GDT entries and MSR registers
 
-Next we have to have the segment registers set to indicate that we're now in usermode.
+The way segment registers (`cs`, `ds`, `ss` etc.) work in protected and long mode is that they are set to an index in the structure called the [Global Descriptor Table (GDT)](https://wiki.osdev.org/Global_Descriptor_Table), which contains entries for each memory segment we might want to use. These registers were used to solve the problem of accessing different memory regions by early x86 processors before paging was a thing. The way it worked was roughly that each segment started at a specified physical memory address, so instead of using a page table and a virtual address to access the memory you wanted you would use a segment for the base of the so-called linear address and an offset to access the specific value that you wanted. This underwent some changes with the introduction of [protected mode](https://wiki.osdev.org/Protected_Mode) which allowed processors to use paging. Nowadays processors are backwards compatible and usually when booting go through real and protected mode before entering 64-bit long mode which allows us to use (currently) 48 bits for addressing. This is a lot more than the 16 bits segment base plus 16 bits offset that we could use in the segmentation days: using 48 bits we can address up to 256 TiB of memory. Segments are therefore mostly obsolete nowadays: In fact, most of the segment bases are ignored and are forced to be 0 (besides `fs` and `gs` which can have nonzero base addresses).
 
-TODO
+Why do we care about them, then? That's because segments also define the current privilege level that the processor is in. These privilege levels are also called rings, as each ring has all the privileges of the rings below it so if you visualize it, ring 0 would contain ring 1, which would contain ring 2 etc. Usually only two rings are used: Ring 0 for the kernel and ring 3 for user-space programs. In ring 0 the processor can interact with physical hardware using special instructions, as well as do things like change the loaded page table which would be disastrous if any user-space program could do.
 
+For each instruction, there are 3 privilege levels we must consider to know if it will throw a [General Protection Fault](https://wiki.osdev.org/Exceptions#General_Protection_Fault):
 
-the GDT bit:
+* The **CPL** is the current level and is defined by the last 2 bits of the `cs` register (so it can take values of 0 to 3)
+* The **DPL** is the descriptor level. It is the minimum CPL that is allowed to access that segment and is stored in the GDT entry that each segment register points to. If `DPL > CPL` and the memory segment defined by that entry is attempted to be accessed, you get a GPF!
+* The **RPL** is the requested level and is defined by the last 2 bits of other segment registers. It works the same way that the DPL does but is stored in the register instead of the entry that it points to. I believe that it's obsolete as it does the same job as the DPL but is kept around for backwards compatibility. Again, RPL > CPL causes a GPF!
 
+If you've followed the tutorial at <https://os.phil-opp.com/double-fault-exceptions/> you should already have a working GDT structure. We'll now have to modify that, in order to include entries for both kernel and user-mode segments. Also, for reasons that I'll explain soon, these entries have to be in a very particular order. This is the way my GDT looks:
 
-+        tss.privilege_stack_table[0] = {
-+            let stack_start = VirtAddr::from_ptr(unsafe { &PRIV_TSS_STACK });
-+            let stack_end = stack_start + STACK_SIZE;
-+            stack_end
-+        };
-
-
-
- lazy_static! {
--    static ref GDT: (GlobalDescriptorTable, [SegmentSelector; 2]) = {
-+    static ref GDT: (GlobalDescriptorTable, [SegmentSelector; 5]) = {
-         let mut gdt = GlobalDescriptorTable::new();
-+        let kernel_data_flags = DescriptorFlags::USER_SEGMENT | DescriptorFlags::PRESENT | DescriptorFlags::WRITABLE;
-         let code_sel = gdt.add_entry(Descriptor::kernel_code_segment());
-+        let data_sel = gdt.add_entry(Descriptor::UserSegment(kernel_data_flags.bits()));
-         let tss_sel = gdt.add_entry(Descriptor::tss_segment(&TSS));
--        (gdt, [code_sel, tss_sel])
-+        let user_data_sel = gdt.add_entry(Descriptor::user_data_segment());
-+        let user_code_sel = gdt.add_entry(Descriptor::user_code_segment());
-+        (gdt, [code_sel, data_sel, tss_sel, user_data_sel, user_code_sel])
-     };
- }
-
-
+```rust
+lazy_static! {
+    static ref GDT: (GlobalDescriptorTable, [SegmentSelector; 5]) = {
+        let mut gdt = GlobalDescriptorTable::new();
+        let kernel_data_flags = DescriptorFlags::USER_SEGMENT | DescriptorFlags::PRESENT | DescriptorFlags::WRITABLE;
+        let code_sel = gdt.add_entry(Descriptor::kernel_code_segment());
+        let data_sel = gdt.add_entry(Descriptor::UserSegment(kernel_data_flags.bits()));
+        let tss_sel = gdt.add_entry(Descriptor::tss_segment(&TSS));
+        let user_data_sel = gdt.add_entry(Descriptor::user_data_segment());
+        let user_code_sel = gdt.add_entry(Descriptor::user_code_segment());
+        (gdt, [code_sel, data_sel, tss_sel, user_data_sel, user_code_sel])
+    };
+}
 
 pub fn init_gdt() {
-     GDT.0.load();
-     let stack = unsafe { &STACK as *const _ };
-+    let user_stack = unsafe { &PRIV_TSS_STACK as *const _ };
-     println!(
--        " - Loaded GDT: {:p} TSS: {:p} Stack {:p} CS segment: {} TSS segment: {}",
--        &GDT.0 as *const _, &*TSS as *const _, stack, GDT.1[0].0, GDT.1[1].0
-+        " - Loaded GDT: {:p} TSS: {:p} Stack {:p} User stack: {:p} CS segment: {} TSS segment: {}",
-+        &GDT.0 as *const _, &*TSS as *const _, stack, user_stack, GDT.1[0].0, GDT.1[1].0
-     );
-     unsafe {
-         set_cs(GDT.1[0]);
--        load_tss(GDT.1[1]);
-+        load_ds(GDT.1[1]);
-+        load_tss(GDT.1[2]);
-     }
- }
-+
-+#[inline(always)]
-+pub unsafe fn set_usermode_segs() -> (u16, u16) {
-+    // set ds and tss, return cs and ds
-+    let (mut cs, mut ds, mut tss) = (GDT.1[4], GDT.1[3], GDT.1[2]);
-+    cs.0 |= PrivilegeLevel::Ring3 as u16;
-+    ds.0 |= PrivilegeLevel::Ring3 as u16;
-+    tss.0 |= PrivilegeLevel::Ring3 as u16;
-+    load_ds(ds);
-+    // load_tss(tss);
-+    (cs.0, ds.0)
-+}
+    GDT.0.load();
+    let stack = unsafe { &STACK as *const _ };
+    let user_stack = unsafe { &PRIV_TSS_STACK as *const _ };
+    println!(
+        " - Loaded GDT: {:p} TSS: {:p} Stack {:p} User stack: {:p} CS segment: {} TSS segment: {}",
+        &GDT.0 as *const _, &*TSS as *const _, stack, user_stack, GDT.1[0].0, GDT.1[1].0
+    );
+    unsafe {
+        set_cs(GDT.1[0]);
+        load_ds(GDT.1[1]);
+        load_tss(GDT.1[2]);
+    }
+}
+```
+
+We see that the kernel-mode segment registers are loaded upon initialization of the kernel! In a similar fashion, we will be setting the user-mode ones before jumping to user-mode for the first time to restrict the user program's permissions. How do we restore the kernel-mode ones afterwards, though?
+
+Finally, the last piece of the puzzle: Once we are in user-mode and we want to make a syscall we need a way to restore our old segment registers so that we have full permissions again. Obviously this is not something the user program can do, and a special mechanism is once again needed. As I want to use the modern syscall / sysret instructions to interface with the kernel, there are some model-specific register (MSRs) that need to be defined. The first of these is called `IA32_STAR` and its purpose is exactly what we want: Upon a syscall, `cs` and `ss` are restored by using the value stored in that register. Specifically, the following happens upon executing the [syscall instruction](https://www.felixcloutier.com/x86/syscall), among other things:
+
+```
+CS.Selector ← IA32_STAR[47:32] AND FFFCH (* Operating system provides CS; RPL forced to 0 *)
+SS.Selector ← IA32_STAR[47:32] + 8;
+```
+
+Side note: Thanks to <https://www.felixcloutier.com/x86/> for providing these invaluable details for each instruction!
+
+In a similar manner, the following happens upon returning from a syscall, using the [sysret instruction](https://www.felixcloutier.com/x86/sysret):
+
+```
+CS.Selector ← IA32_STAR[63:48]+16;
+SS.Selector ← (IA32_STAR[63:48]+8) OR 3;
+```
+
+The spec of these two instructions therefore doesn't give us too much wiggle room. We have to setup `IA32_STAR` so that bits 32:47 contain the index of the kernel-mode code segment entry in the GDT, and the user-mode stack segment entry (for which we'll use the data entry, as it makes no difference) has to be right after that. Similarly bits 48:63 will contain the index of the user-mode code segment entry in the GDT, after which will be the index of the user-mode data segment entry. That's a mouthfull, so let's get to it and forget about this part forever afterwards!
+
+Each entry in the GDT is normally 8 bytes, however the TSS one is special and takes up two entries, being 16 bytes. Also the first entry has to be empty, so we don't consider it. This is what our GDT looks like:
+
+| Offset    | Entry         | IA32_STAR bits |
+| --------- | ------------- | -------------- |
+| +0        | Empty         |                |
+| +8        | Kernel code   | 32:47          |
+| +16       | Kernel data   |                |
+| +24       | TSS pt1       |                |
+| +32       | TSS pt2       | 48:63          |
+| +40       | User data     |                |
+| +48       | User code     |                |
+
+This way, the upon syscall/sysret the segment registers will point to the entries we want! For syscall we want `IA32_STAR[32:47] == 8` The sysret one in particular is rather confusing: Notice that it has nothing to do with the TSS register. What we want is for `IA32_STAR[48:63] + 8 == user SS` and `IA32_STAR[48:63] + 16 == user CS` which we get by putting the offset 32 (=0x20) in that position in the register. Notice that the last 2 bits of the segment selector however need to be 3 here to indicate that we are in ring 3, so we finally use the value 0x23 for that position in the register.
+
+All in all, we want the register to have the value `0x23000800000000`. We set that register with the instruction `wrmsr` (write model-specific register). The higher bits are set to the value of `rdx` and the lower (which should be zero) to the value of `rax` while `rcx` determines which MSR we write to (`IA32_STAR` is `0xC0000081`). The following code does what we want:
+
+```rust
+// register for address of syscall handler
+const MSR_STAR: usize = 0xC0000081;
+
+pub unsafe fn init_syscalls() {
+    // write segments to use on syscall/sysret to AMD'S MSR_STAR register
+    asm!("\
+    xor rax, rax
+    mov rdx, 0x230008 // use seg selectors 8, 16 for syscall and 43, 51 for sysret
+    wrmsr" :: "{rcx}"(MSR_STAR) : "rax", "rdx" : "intel", "volatile");
+}
+```
+
+Finally we have to enable System Call Extensions (SCE) to be able to use the syscall/sysret opcodes by setting the last bit in the MSR `IA32_EFER`. The following code which I've put in the boot sequence does that:
+
+```asm
+mov ecx, 0xC0000080
+rdmsr
+or eax, 1
+wrmsr
+```
+
+We're finally done with the GDT part. Phew!
 
 
 ## iretq syscall sysret
 
 TODO
 
-enable System Call Extensions (SCE) to be able to use the syscall opcode
-
-     rdmsr
-     or eax, 1
-     wrmsr
-
-
-links to instruction workings
+msr registers for mask and syscall addr
+setting of segments

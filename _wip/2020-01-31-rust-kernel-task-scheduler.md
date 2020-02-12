@@ -8,7 +8,38 @@ This post is about writing a simple, round-robin task scheduler for my Rust kern
 
 Source code: <https://github.com/nikofil/rust-os> and in particular [the `scheduler.rs` file](https://github.com/nikofil/rust-os/blob/master/kernel/src/scheduler.rs)
 
-So, we've made it this far. We've managed to jump to userspace and have it call the kernel. That's quite boring though! Our kernel code is still tightly coupled with the user-mode program: It jumps to a specified point in the code, and is called back shortly after. That's why we need a scheduler, so that programs can execute other programs and we have something that resembles a real kernel. Of course we have nothing to execute yet - we'd need files for that, which need a filesystem! That will come later. First, let's make our kernel work with 2 predefined processes.
+So, we've made it this far. We've managed to jump to userspace and have it call the kernel. That's quite boring though! Our kernel code is still tightly coupled with the usermode program: It jumps to a specified point in the code, and is called back shortly after. That's why we need a scheduler, so that programs can execute other programs and we have something that resembles a real kernel. Of course we have nothing to execute yet - we'd need files for that, which need a filesystem! That will come later. First, let's make our kernel work with 2 predefined processes.
+
+
+## Userspace processes
+
+First of all, let's make our 2 processes. These should normally be stored on the filesystem, but until we have a filesystem we can just make two functions that we'll jump to in usermode. These should be doing something to show us they work: a syscall that prints something to the screen! Let's define that first.
+
+```rust
+TODO
+```
+
+Then we can make our process funcs. They're going to be pretty simple: They will initialize their registers to some distinct value, so that we can see that these values stay as they are and that we don't mess them up. Then they will [spin](https://en.wikipedia.org/wiki/Busy_waiting) for a bit so that we don't flood the console with messages, and after a bit they'll perform syscall. Finally, they'll do it all over again!
+
+Here are our usermode processes:
+
+```rust
+TODO
+```
+
+We can't multi-task yet but, since the [previous post]({% post_url 2020-02-12-rust-kernel-to-userspace-and-back %}), we can jump to usermode and see what the output of only one of these looks like. Here's the code to do that:
+
+```rust
+TODO
+```
+
+This should be the result on the console:
+
+```
+TODO image
+```
+
+Exciting!
 
 
 ## Building a Task struct
@@ -71,16 +102,59 @@ struct Task {
     _stack_vec: Vec<u8>,
     task_pt: Box<mem::PageTable>,
 }
+
+impl Task {
+    pub fn new(exec_base: mem::VirtAddr, stack_end: mem::VirtAddr, _stack_vec: Vec<u8>, task_pt: Box<mem::PageTable>) -> Task {
+        Task {
+            ctx: None,
+            exec_base,
+            stack_end,
+            _stack_vec,
+            task_pt,
+        }
+    }
+}
+
+impl Display for Task {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        unsafe {
+            write!(f, "PT: {}, Context: {:x?}", self.task_pt.phys_addr(), self.ctx)
+        }
+    }
+}
 ```
 
-## Userspace processes
-
-maybe move that up?
-TODO
+Simple, huh?
 
 
-## Scheduling a process
+## Interrupting the running process
 
+We're very close, now. We have the structures needed to define a process, we just need to be able to save and restore a context which requires some assembly, in order to make sure that Rust doesn't mess with the registers of the process before we can save them. Afterwards things are quite straightforward.
+
+TODO interrupt calling convention: base off https://os.phil-opp.com/cpu-exceptions/ with a graph of how the registers look like
+TODO get_context fn
+TODO timer interrupt
+TODO how stack changes here: since timer interrupt in the interrupt table has interrupt_stack_index=0 the stack doesnt change if already in kernel mode, if in user mode then it changes to priv_tss_stack+0x1000 (end of stack) which is at the TSS' privilege_stack_level[0] and our target privilege level is 0 (ring0)
+TODO afterwards cpu pushes: ss rsp rflags cs rip <- final rsp points to old rip
+
+
+## Scheduling processes
+
+Here is the function for restoring the delicate Context:
+TODO explain
+
+```
+#[naked]
+#[inline(always)]
+pub unsafe fn restore_context(ctxr: &Context) {
+    asm!("mov rsp, $0;\
+    pop rbp; pop rax; pop rbx; pop rcx; pop rdx; pop rsi; pop rdi; pop r8; pop r9;\
+    pop r10; pop r11; pop r12; pop r13; pop r14; pop r15; iretq;"
+    :: "r"(ctxr) :: "intel", "volatile");
+}
+```
+
+TODO scheduler.rs after writing some comments
 TODO
     let userspace_fn_1_in_kernel = mem::VirtAddr::new(userspace::userspace_prog_1 as *const () as u64);
     let userspace_fn_2_in_kernel = mem::VirtAddr::new(userspace::userspace_prog_2 as *const () as u64);
@@ -95,6 +169,4 @@ TODO
  
 
 
-## Interrupting the running process
-
-TODO
+TODO proofread after writing part1

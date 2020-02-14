@@ -4,7 +4,7 @@ categories: Kernel Rust Coding
 tags: rust kernel userspace
 ---
 
-This post is about writing a simple, round-robin task scheduler for my Rust kernel. It builds on some concepts I wrote about in my previous post: [To userspace and back!]({% post_url 2020-02-12-rust-kernel-to-userspace-and-back %}).
+This post is about writing a simple, round-robin task scheduler for my Rust kernel. It builds on some concepts I wrote about in my previous post: [To userspace and back!]({% post_url 2020-02-14-rust-kernel-to-userspace-and-back %}).
 
 Source code: <https://github.com/nikofil/rust-os> and in particular [the `scheduler.rs` file](https://github.com/nikofil/rust-os/blob/master/kernel/src/scheduler.rs)
 
@@ -27,7 +27,7 @@ Here are our usermode processes:
 TODO
 ```
 
-We can't multi-task yet but, since the [previous post]({% post_url 2020-02-12-rust-kernel-to-userspace-and-back %}), we can jump to usermode and see what the output of only one of these looks like. Here's the code to do that:
+We can't multi-task yet but, since the [previous post]({% post_url 2020-02-14-rust-kernel-to-userspace-and-back %}), we can jump to usermode and see what the output of only one of these looks like. Here's the code to do that:
 
 ```rust
 TODO

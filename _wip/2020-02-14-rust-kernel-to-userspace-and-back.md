@@ -31,6 +31,8 @@ Let's look at each one of these steps.
 
 The [page table](https://wiki.osdev.org/Page_Tables) is a structure that allows the kernel to use virtual paging. That means that, when the processor is in [long mode](https://wiki.osdev.org/X86-64#Long_Mode) the memory addresses almost never correspond to the physical memory address that is used. Instead, the page table is used to lookup which physical page a virtual page corresponds to whenever we store to or load from an address, except for a few special operations. One of these special operations is, of course, setting the register that determines where the page table is: `CR3`. This register must know the physical location of the (topmost) page table, as otherwise it would have to use itself to resolve the physical location which would be even more confusing!
 
+### Creating a new page table
+
 Of course this subject goes quite deeper, with nested page tables and permissions, but I won't go that deep into that here.
 
 Okay, so our first task is to create a page table for our new user process. We still want to keep the kernel mapped where it's already loaded, as otherwise the next instruction after loading the page table would (probably) not be there and we would crash. So first order of business is to copy the kernel's PT entries over to a new one:
@@ -38,17 +40,17 @@ Okay, so our first task is to create a page table for our new user process. We s
 ```rust
 impl PageTable {
     pub unsafe fn new() -> Box<PageTable> {
-        let mut pt = Box::new(PageTable{ entries: [PTEntry(0); 512] });
-        pt.entries[0].set_phys_addr(Self::alloc_page());
+        let mut pt = Box::new(PageTable{ entries: [PTEntry(0); 512] }); // allocate the master PT struct
+        pt.entries[0].set_phys_addr(Self::alloc_page()); // allocate page for the first child PT
         pt.entries[0].set_bit(BIT_PRESENT, true);
         pt.entries[0].set_bit(BIT_WRITABLE, true);
-        pt.entries[0].set_bit(BIT_USER, true);
-        let mut pt0 = pt.entries[0].next_pt();
+        pt.entries[0].set_bit(BIT_USER, true); // entry is present, writable and accessible by user
+        let mut pt0 = pt.entries[0].next_pt(); // get the child PT we just allocated
         let cur_pt0 = get_page_table().entries[0].next_pt();
-        pt0.entries[3] = cur_pt0.entries[3].clone();
-        pt0.entries[4] = cur_pt0.entries[4].clone();
-        pt0.entries[5] = cur_pt0.entries[5].clone();
-        pt0.entries[6] = cur_pt0.entries[6].clone();
+        pt0.entries[3] = cur_pt0.entries[3].clone(); // copy over the entries 3, 4, 5, 6 from the equivalent
+        pt0.entries[4] = cur_pt0.entries[4].clone(); // child PT that is currently in use
+        pt0.entries[5] = cur_pt0.entries[5].clone(); // these correspond to the addresses our kernel uses
+        pt0.entries[6] = cur_pt0.entries[6].clone(); // plus some more, so that the entire physical memory is mapped
         pt
     }
 }
@@ -62,17 +64,23 @@ Great, so we allocated the topmost page table and we have a pointer to it! What 
 
 We still have to map the virtual memory for the program's code and stack to physical memory. But first we have to know the physical address where our program begins, in order to be able to map a virtual address to it!
 
+### The usermode program
+
 For simplicity's (ha) sake, my current usermode program is simply another Rust function. It doesn't have anything to do for now:
 
 ```rust
 pub unsafe fn userspace_prog_1() {
     asm!("\
         nop
+        nop
+        nop
     ":::: "intel");
 }
 ```
 
-We now have to determine its physical address, and where the physical page that contains it is located (as page tables deal in units of, well, pages). Then we map that page to `0x400000` which is a pretty common place for a program's entry point (or at least it was in the 32-bit days). It's also an address that makes me excited, as it was the first address you used to see when debugging a new program!
+### Mapping the program and the stack to virtual memory
+
+We now have to determine its physical address, and where the physical page that contains it is located (as page tables deal in units of, well, pages). Then we map that page to `0x400000` which is a pretty common place for a program's entry point (or at least it was in the 32-bit days). It was the first address you used to see when debugging a new program!
 
 ```rust
 let userspace_fn_1_in_kernel = mem::VirtAddr::new(userspace::userspace_prog_1 as *const () as u64);
@@ -124,6 +132,8 @@ For each instruction, there are 3 privilege levels we must consider to know if i
 * The **DPL** is the descriptor level. It is the minimum CPL that is allowed to access that segment and is stored in the GDT entry that each segment register points to. If `DPL > CPL` and the memory segment defined by that entry is attempted to be accessed, you get a GPF!
 * The **RPL** is the requested level and is defined by the last 2 bits of other segment registers. It works the same way that the DPL does but is stored in the register instead of the entry that it points to. I believe that it's obsolete as it does the same job as the DPL but is kept around for backwards compatibility. Again, RPL > CPL causes a GPF!
 
+### Creating the new GDT entries
+
 If you've followed the tutorial at <https://os.phil-opp.com/double-fault-exceptions/> you should already have a working GDT structure. We'll now have to modify that, in order to include entries for both kernel and user-mode segments. Also, for reasons that I'll explain soon, these entries have to be in a very particular order. This is the way my GDT looks:
 
 ```rust
@@ -131,11 +141,11 @@ lazy_static! {
     static ref GDT: (GlobalDescriptorTable, [SegmentSelector; 5]) = {
         let mut gdt = GlobalDescriptorTable::new();
         let kernel_data_flags = DescriptorFlags::USER_SEGMENT | DescriptorFlags::PRESENT | DescriptorFlags::WRITABLE;
-        let code_sel = gdt.add_entry(Descriptor::kernel_code_segment());
-        let data_sel = gdt.add_entry(Descriptor::UserSegment(kernel_data_flags.bits()));
-        let tss_sel = gdt.add_entry(Descriptor::tss_segment(&TSS));
-        let user_data_sel = gdt.add_entry(Descriptor::user_data_segment());
-        let user_code_sel = gdt.add_entry(Descriptor::user_code_segment());
+        let code_sel = gdt.add_entry(Descriptor::kernel_code_segment()); // kernel code segment
+        let data_sel = gdt.add_entry(Descriptor::UserSegment(kernel_data_flags.bits())); // kernel data segment
+        let tss_sel = gdt.add_entry(Descriptor::tss_segment(&TSS)); // task state segment
+        let user_data_sel = gdt.add_entry(Descriptor::user_data_segment()); // user data segment
+        let user_code_sel = gdt.add_entry(Descriptor::user_code_segment()); // user code segment
         (gdt, [code_sel, data_sel, tss_sel, user_data_sel, user_code_sel])
     };
 }
@@ -157,6 +167,8 @@ pub fn init_gdt() {
 ```
 
 We see that the kernel-mode segment registers are loaded upon initialization of the kernel! In a similar fashion, we will be setting the user-mode ones before jumping to user-mode for the first time to restrict the user program's permissions. How do we restore the kernel-mode ones afterwards, though?
+
+### Setting the IA32-STAR model-specific register
 
 Finally, the last piece of the puzzle: Once we are in user-mode and we want to make a syscall we need a way to restore our old segment registers so that we have full permissions again. Obviously this is not something the user program can do, and a special mechanism is once again needed. As I want to use the modern syscall / sysret instructions to interface with the kernel, there are some model-specific register (MSRs) that need to be defined. The first of these is called `IA32_STAR` and its purpose is exactly what we want: Upon a syscall, `cs` and `ss` are restored by using the value stored in that register. Specifically, the following happens upon executing the [syscall instruction](https://www.felixcloutier.com/x86/syscall), among other things:
 
@@ -205,6 +217,8 @@ pub unsafe fn init_syscalls() {
 }
 ```
 
+### System Call Extensions
+
 Finally we have to enable System Call Extensions (SCE) to be able to use the syscall/sysret opcodes by setting the last bit in the MSR `IA32_EFER`. The following code which I've put in the boot sequence does that:
 
 ```asm
@@ -217,9 +231,119 @@ wrmsr
 We're finally done with the GDT part. Phew!
 
 
-## iretq syscall sysret
+## iretq'ing ourselves to usermode
 
-TODO
+We're now pretty much ready to make our first jump to ~~lightspeed~~ usermode! All we need is to set a couple segment registers, a couple non-segment registers and off we go.
+
+### Setting the segment selectors
+
+First, I've put this method in 
+```rust
+#[inline(always)]
+pub unsafe fn set_usermode_segs() -> (u16, u16) {
+    // set ds and tss, return cs and ds
+    let (mut cs, mut ds) = (GDT.1[4], GDT.1[3]);
+    cs.0 |= PrivilegeLevel::Ring3 as u16;
+    ds.0 |= PrivilegeLevel::Ring3 as u16;
+    load_ds(ds);
+    (cs.0, ds.0)
+}
+```
+
+This sets the data segment to our previously defined user data segment selector, OR'd with 3 to indicate the RPL for this entry is usermode. Then we return the OR'd segment selector for the code and stack segments (which will be the same as the data segment). That's because we can't set them right now, otherwise we couldn't execute the rest of this method as it's located in kernel land. Instead, the fabled `iretq` instruction will set these segment selectors for us, along with several other things.
+
+### iretq specification
+
+Here's the spec for the `iretq` instruction: <https://www.felixcloutier.com/x86/iret:iretd>
+We care about the (huge, for a single instruction) operation. Let's go through the path that we're going to follow, a piece at a time.
+
+```
+IF PE = 0 # false, Physical Address Extension (64-bit mode) has been enabled early in the boot process  
+ELSIF (IA32_EFER.LMA = 0) # false, we also activated Long Mode early  
+ELSE GOTO IA-32e-MODE;
+IA-32e-MODE:
+IF NT = 1 # NT bit in FLAGS register is clear  
+ELSE IF OperandSize = 32 # the q in iretq means our OperandSize = 64  
+ELSE (* OperandSize = 64 *)  
+    RIP ← Pop(); # so, we need to push the address to jump to (rip)  
+    CS ← Pop(); #  and we need to push the next cs to use  
+    tempRFLAGS ← Pop(); # and the next rflags  
+FI;
+IF CS.RPL > CPL # indeed, we go to a higher privilege level  
+    THEN GOTO RETURN-TO-OUTER-PRIVILEGE-LEVEL;  
+RETURN-TO-OUTER-PRIVILEGE-LEVEL:  
+IF OperandSize = 32 # nope, it's 64  
+ELSE IF OperandSize = 16 # nope  
+ELSE (* OperandSize = 64 *) # that's the one  
+    RSP ← Pop(); # and we need to push the next rsp  
+    SS ← Pop(); # and the next ss
+FI;
+```
+
+The rest of the operation is not that interesting. Except of course for:
+
+`CPL ← CS(RPL);` our new CPL is the RPL of our new `cs`! That means we are now in usermode.
+
+### Final code to return to usermode
+
+Let's set this all up, then. We need to push the required registers in the reverse order that they get popped.  
+This is the code that does all the things we just talked about:
+
+```rust
+pub unsafe fn jmp_to_usermode(code: mem::VirtAddr, stack_end: mem::VirtAddr) {
+    let (cs_idx, ds_idx) = gdt::set_usermode_segs();
+    x86_64::instructions::tlb::flush_all(); // flush the TLB after address-space switch
+    asm!("\
+    push rax // stack segment
+    push rsi // rsp
+    pushfq   // rflags
+    push rdx // code segment
+    push rdi // ret to virtual addr
+    iretq"
+    :: "{rdi}"(code.addr()), "{rsi}"(stack_end.addr()), "{dx}"(cs_idx), "{ax}"(ds_idx) :: "intel", "volatile");
+}
+```
+
+Finally we can call that function with the desired `rip` and `rsp`, which should be the virtual addresses that we set up before:
+
+```rust
+jmp_to_usermode(mem::VirtAddr::new(userspace_fn_virt), mem::VirtAddr::new(0x801000));
+```
+
+### Seeing the return in GDB
+
+Let's see it happen in action! We can attach a debugger to our OS by running `qemu` with the `-s -S` options, which makes the processor start paused and opens a tcp server on port 1234. Another helpful one is `-monitor stdio`, which gives us a console that we can use to query the processor's state (ie. registers, CPL). Let's do that and attach gdb with:
+
+`>>> target remote localhost:1234`
+
+This is the screen that greets me:
+![GDB attach screen](/assets/images/rustos-gdb-attach.png)
+
+I can now set a breakpoint on `jmp_to_usermode` so that I can see the processor switching to usermode:
+
+```
+>>> file /home/nikos/workspace/rust-os/target/kernel-x86_64.bin
+Reading symbols from /home/nikos/workspace/rust-os/target/kernel-x86_64.bin...(no debugging symbols found)...done.
+>>> b jmp_to_usermode 
+Breakpoint 1 at 0xc0181cd0
+>>> c
+```
+
+We step a bit further, until the `iretq` instruction:
+![GDB iretq instruction](/assets/images/rustos-gdb-iretq.png)
+
+One more step, and...
+![GDB nop instructions](/assets/images/rustos-gdb-nops.png)
+
+Seems to have worked! You can see the registers and segment selectors are what we expect. One more step confirms that we can actually execute instructions while in usermode and that we don't get a GPF.
+
+The qemu console also confirms that we're now in CPL 3:
+
+![Qemu register state](/assets/images/rustos-qemu-registers.png)
+
+All that remains now is to go back to the kernel.
+
+
+## syscall and sysret
 
 msr registers for mask and syscall addr
-setting of segments

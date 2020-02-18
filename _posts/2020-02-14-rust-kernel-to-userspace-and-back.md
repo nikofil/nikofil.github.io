@@ -13,9 +13,9 @@ Source code: <https://github.com/nikofil/rust-os>
 
 When we are running a program in usermode in a real kernel, life is pretty easy: We don't need to worry about crashing the entire system, we can pretend the entire [virtual memory space belongs to us](https://wiki.osdev.org/Memory_Management#Virtual_Address_Space) and we don't need to care about [the GDT and segments](https://wiki.osdev.org/GDT_Tutorial). If we need to interact with the rest of the world, we can simply [perform a syscall to the kernel to do it for us](https://wiki.osdev.org/System_Calls) as we are powerless to do so.
 
-That's because in usermode a program is limited to only doing processing of data. It can't communicate with devices, access important registers (ie. Control Registers, such the CR3 used to set up paging tables) or read memory that is on a higher access level. It has to ask the kernel for even the simplest task, such as reading or writing a single character from/to the input/screen. Without doing that, no usermode program could ever have inputs or outputs of any kind.
+That's because in usermode a program is limited to only doing processing of data. It can't communicate with devices, access important registers (ie. Control Registers, such as `cr3` used to set up paging tables) or read memory that is on a higher access level. It has to ask the kernel for even the simplest task, such as reading or writing a single character from/to the input/screen. Without doing that, no usermode program could ever have inputs or outputs of any kind.
 
-The kernel, of course, has to do all the heavy lifting: It has to set up the environment just perfect for the user program to have all of its information where it expects in order to be able to run. Then, when the user program performs a syscall, it has to make sure to save all of its registers and stack location to be able to restore it later so that a syscall behaves just like a regular call from the program's perspective, while in reality it's a much more complex process.
+The kernel has to do all the heavy lifting: It has to set up the environment just perfect for the user program to have all of its information where it expects in order to be able to run. Then, when the user program performs a syscall, it has to make sure to save all of its registers and stack location to be able to restore it later so that a syscall behaves just like a regular call from the program's perspective, while in reality it's a much more complex process.
 
 Whenever the kernel wants to give execution to a user program, the process can be summarized into 3 steps:
 * Enable the page table that has this program's memory mapped to the correct virtual addresses (as each program might be using the same virtual address, but different physical memory underneath)
@@ -29,11 +29,11 @@ Let's look at each one of these steps.
 
 ## Enabling the page table for the user process
 
-The [page table](https://wiki.osdev.org/Page_Tables) is a structure that allows the kernel to use virtual paging. That means that, when the processor is in [long mode](https://wiki.osdev.org/X86-64#Long_Mode) the memory addresses almost never correspond to the physical memory address that is used. Instead, the page table is used to lookup which physical page a virtual page corresponds to whenever we store to or load from an address, except for a few special operations. One of these special operations is, of course, setting the register that determines where the page table is: `CR3`. This register must know the physical location of the (topmost) page table, as otherwise it would have to use itself to resolve the physical location which would be even more confusing!
+The [page table](https://wiki.osdev.org/Page_Tables) is a structure that allows the kernel to use virtual paging. That means that, when the processor is in [long mode](https://wiki.osdev.org/X86-64#Long_Mode) the memory addresses almost never correspond to the physical memory address that is used. Instead, the page table is used to lookup which physical page a virtual page corresponds to whenever we store to or load from an address, except for a few special operations. One of these special operations is, of course, setting the register that determines where the page table is: `cr3`. This register must know the physical location of the (topmost) page table, as otherwise it would have to use itself to resolve the physical location which would be even more confusing!
 
 ### Creating a new page table
 
-Of course this subject goes quite deeper, with nested page tables and permissions, but I won't go that deep into that here.
+This subject goes quite deeper, with nested page tables and permissions, but I won't go that deep into that here.
 
 Okay, so our first task is to create a page table for our new user process. We still want to keep the kernel mapped where it's already loaded, as otherwise the next instruction after loading the page table would (probably) not be there and we would crash. So first order of business is to copy the kernel's PT entries over to a new one:
 
@@ -117,12 +117,12 @@ pub unsafe fn enable(&self) {
 }
 ```
 
-`cr3` is now set! The virtual memory above `0xC0000000` will be exactly the same, but there's now memory mapped to `0x400000` and `0x800000`!
+`cr3` is now set. The virtual memory above `0xC0000000` will be exactly the same, but there's now memory mapped to `0x400000` and `0x800000`!
 
 
 ## Setting the GDT entries and MSR registers
 
-The way segment registers (`cs`, `ds`, `ss` etc.) work in protected and long mode is that they are set to an index in the structure called the [Global Descriptor Table (GDT)](https://wiki.osdev.org/Global_Descriptor_Table), which contains entries for each memory segment we might want to use. These registers were used to solve the problem of accessing different memory regions by early x86 processors before paging was a thing. The way it worked was roughly that each segment started at a specified physical memory address, so instead of using a page table and a virtual address to access the memory you wanted you would use a segment for the base of the so-called linear address and an offset to access the specific value that you wanted. This underwent some changes with the introduction of [protected mode](https://wiki.osdev.org/Protected_Mode) which allowed processors to use paging. Nowadays processors are backwards compatible and usually when booting go through real and protected mode before entering 64-bit long mode which allows us to use (currently) 48 bits for addressing. This is a lot more than the 16 bits segment base plus 16 bits offset that we could use in the segmentation days: using 48 bits we can address up to 256 TiB of memory. Segments are therefore mostly obsolete nowadays: In fact, most of the segment bases are ignored and are forced to be 0 (besides `fs` and `gs` which can have nonzero base addresses).
+The way segment registers (`cs`, `ds`, `ss` etc.) work in protected and long mode is that they are set to an index in the structure called the [Global Descriptor Table (GDT)](https://wiki.osdev.org/Global_Descriptor_Table) which contains entries for each memory segment we might want to use. These registers were used to solve the problem of accessing different memory regions by early x86 processors before paging was a thing. The way it worked was roughly that each segment started at a specified physical memory address, so instead of using a page table and a virtual address to access the memory you wanted you would use a segment for the base of the so-called linear address and an offset to access the specific value that you wanted. This underwent some changes with the introduction of [protected mode](https://wiki.osdev.org/Protected_Mode) which allowed processors to use paging. Nowadays processors are backwards compatible and usually when booting go through real and protected mode before entering 64-bit long mode, which allows us to use (currently) 48 bits for addressing. This is a lot more than the 16 bits segment base plus 16 bits offset that we could use in the segmentation days: using 48 bits we can address up to 256 TiB of memory. Segments are therefore mostly obsolete nowadays. In fact, most of the segment bases are ignored and are forced to be 0 (besides `fs` and `gs` which can have nonzero base addresses).
 
 Why do we care about them, then? That's because segments also define the current privilege level that the processor is in. These privilege levels are also called rings, as each ring has all the privileges of the rings below it so if you visualize it, ring 0 would contain ring 1, which would contain ring 2 etc. Usually only two rings are used: Ring 0 for the kernel and ring 3 for user-space programs. In ring 0 the processor can interact with physical hardware using special instructions, as well as do things like change the loaded page table which would be disastrous if any user-space program could do.
 
@@ -168,9 +168,9 @@ pub fn init_gdt() {
 
 We see that the kernel-mode segment registers are loaded upon initialization of the kernel! In a similar fashion, we will be setting the user-mode ones before jumping to user-mode for the first time to restrict the user program's permissions. How do we restore the kernel-mode ones afterwards, though?
 
-### Setting the IA32-STAR model-specific register
+### Setting the `IA32_STAR` model-specific register
 
-Finally, the last piece of the puzzle: Once we are in user-mode and we want to make a syscall we need a way to restore our old segment registers so that we have full permissions again. Obviously this is not something the user program can do, and a special mechanism is once again needed. As I want to use the modern syscall / sysret instructions to interface with the kernel, there are some model-specific register (MSRs) that need to be defined. The first of these is called `IA32_STAR` and its purpose is exactly what we want: Upon a syscall, `cs` and `ss` are restored by using the value stored in that register. Specifically, the following happens upon executing the [syscall instruction](https://www.felixcloutier.com/x86/syscall), among other things:
+Finally, the last piece of the puzzle: Once we are in user-mode and we want to make a syscall we need a way to restore our old segment registers so that we have full permissions again. Obviously this is not something the user program can do, and a special mechanism is once again needed. As I want to use the modern `syscall / sysret` instructions to interface with the kernel, there are some model-specific register (MSRs) that need to be defined. The first of these is called `IA32_STAR` and its purpose is exactly what we want: Upon a syscall, `cs` and `ss` are restored by using the value stored in that register. Specifically, the following happens upon executing the [syscall instruction](https://www.felixcloutier.com/x86/syscall), among other things:
 
 ```
 CS.Selector ← IA32_STAR[47:32] AND FFFCH (* Operating system provides CS; RPL forced to 0 *)
@@ -186,7 +186,7 @@ CS.Selector ← IA32_STAR[63:48]+16;
 SS.Selector ← (IA32_STAR[63:48]+8) OR 3;
 ```
 
-The spec of these two instructions therefore doesn't give us too much wiggle room. We have to setup `IA32_STAR` so that bits 32:47 contain the index of the kernel-mode code segment entry in the GDT, and the user-mode stack segment entry (for which we'll use the data entry, as it makes no difference) has to be right after that. Similarly bits 48:63 will contain the index of the user-mode code segment entry in the GDT, after which will be the index of the user-mode data segment entry. That's a mouthfull, so let's get to it and forget about this part forever afterwards!
+The spec of these two instructions therefore doesn't give us too much wiggle room. We have to setup `IA32_STAR` so that bits 32:47 contain the index of the kernel-mode code segment entry in the GDT, and the user-mode stack segment entry (for which we'll use the data entry, as it makes no difference) has to be right after that. Similarly bits 48:63 will contain the index of the user-mode code segment entry in the GDT, after which will be the index of the user-mode data segment entry. That's a mouthful, so let's get to it and forget about this part forever afterwards!
 
 Each entry in the GDT is normally 8 bytes, however the TSS one is special and takes up two entries, being 16 bytes. Also the first entry has to be empty, so we don't consider it. This is what our GDT looks like:
 
@@ -280,7 +280,7 @@ ELSE (* OperandSize = 64 *) # that's the one
 FI;
 ```
 
-The rest of the operation is not that interesting. Except of course for:
+The rest of the operation is not that interesting, except for:
 
 `CPL ← CS(RPL);` our new CPL is the RPL of our new `cs`! That means we are now in usermode.
 
@@ -346,4 +346,232 @@ All that remains now is to go back to the kernel.
 
 ## syscall and sysret
 
-msr registers for mask and syscall addr
+There are several ways for the kernel to take control once a user program is running in x86. The one that was initially used in Unix-like kernels was to trigger a [trap](http://www.tldp.org/LDP/khg/HyperNews/get/syscall/syscall86.html): essentially, to make the program raise an exception which the kernel has to handle. For example, a kernel could similarly use a divison by zero to call the kernel (though that's a bad idea).
+
+Typically a trap was triggered with an `int 80h` instruction. The kernel would then be summoned, and the entry defined at index 80h in the [Interrupt Descriptor Table](https://wiki.osdev.org/Interrupt_Descriptor_Table) would be used to handle the exception. That would typically be the system call handler which would then use the registers passed to determine which syscall is requested.
+
+The issue with this is that, well, exceptions are slow. They have unnecessary overhead. The processor must read the IDT, make access control checks etc. everytime that we do this. To avoid this, Intel developed the `sysenter/sysexit` pair of instructions. At the same time AMD developed `syscall/sysret`. In 32-bit kernels `sysenter/sysexit` is compatible with both Intel and AMD processors. In 64-bits however, it's `syscall/sysret` that is compatible.
+
+`syscall/sysret` simplify the system call procedure. These instructions can [take fewer than 1/4th of clock cycles of a regular `call/ret`](https://wiki.osdev.org/SYSENTER#AMD:_SYSCALL.2FSYSRET). Part of the reason is that the processor has dedicated registers for which address to jump to and what to set the important segment registers to. The latter we've already defined: It's the `IA32_STAR` MSR that we set a while ago! We still need to define two more similar MSRs and then we're ready to go.
+
+### `IA32_LSTAR` and `IA32_FMASK`
+
+These are the two additional registers we need to set. Thankfully they're pretty straightforward: `IA32_LSTAR` is the most important one, the address of our syscall handler that will be called on every `syscall` instruction. `IA32_FMASK` gives us a way to mask out some bits from the `RFLAGS` register when a syscall occurs.
+
+* For the latter, we want to only clear the interrupt flag in `RFLAGS`. This way, once a syscall is triggered, we ignore any other interrupts: timer, keyboard etc. at least until we can set up a stack for the syscall. Notice that the start of a syscall is a bit confusing: We are still using the user program's stack until we can set up a kernel-side one, but we're running in kernel mode. That's why a hardware exception occuring right there would possibly result in weird situations.
+
+    Therefore, we want to clear bit 9 ([Interrupt Flag](https://en.wikipedia.org/wiki/Interrupt_flag)). The value for `IA32_FMASK` will be `1 << 9 = 0x200`.
+
+* The former is straightforward enough: we have to create the syscall handler and write the address to it. Let's just make it an empty method for now. All in all, this is our updated `init_syscalls` method:
+
+```rust
+// register for address of syscall handler
+const MSR_STAR: usize = 0xc0000081;
+const MSR_LSTAR: usize = 0xc0000082;
+const MSR_FMASK: usize = 0xc0000084;
+
+pub unsafe fn init_syscalls() {
+    let handler_addr = handle_syscall as *const () as u64;
+    // clear Interrupt flag on syscall with AMD's MSR_FSTAR register
+    asm!("\
+    xor rdx, rdx
+    mov rax, 0x200
+    wrmsr" :: "{rcx}"(MSR_FMASK) : "rdx" : "intel", "volatile");
+    // write handler address to AMD's MSR_LSTAR register
+    asm!("\
+    mov rdx, rax
+    shr rdx, 32
+    wrmsr" :: "{rax}"(handler_addr), "{rcx}"(MSR_LSTAR) : "rdx" : "intel", "volatile");
+    // write segments to use on syscall/sysret to AMD'S MSR_STAR register
+    asm!("\
+    xor rax, rax
+    mov rdx, 0x230008 // use seg selectors 8, 16 for syscall and 43, 51 for sysret
+    wrmsr" :: "{rcx}"(MSR_STAR) : "rax", "rdx" : "intel", "volatile");
+}
+
+#[naked]
+fn handle_syscall() {
+    unsafe {
+        asm!("\
+        nop
+        nop
+        nop
+        sysretq
+        ":::: "intel");
+    }
+}
+```
+
+This should now work! Let's test it. I change my user process to perform a syscall, and track it in gdb.
+
+Before the syscall:
+![GDB before syscall](/assets/images/rustos-gdb-before-syscall.png)
+
+Inside the syscall:
+![GDB during syscall](/assets/images/rustos-gdb-inside-syscall.png)
+
+After sysret:
+![GDB after syscall](/assets/images/rustos-gdb-after-syscall.png)
+
+Perfect! You can see we go to kernel mode (`cs=8`) again, and then back (`cs=0x33`)! Everything works as we want it, finally.
+
+This syscall was not particularly useful. We can't do all the useful things we have in mind directly, however! That's because the code that Rust will emit will probably overwrite the usermode program's registers, but we have to maintain the ones that the program doesn't expect to change. Also, while we could use the program's stack, that means that the program will then be able to see data that our kernel created in its stack. Exposing the internals of our kernel to a user program is a bad idea! Let's see what we can do about this.
+
+
+### Saving the registers & stack
+
+I won't get into calling conventions too much, but the idea is this: When a call is performed, the caller function expects some specific registers to be the same when the called function returns. For the rest of them, the caller function expects they will be erased and needs to save them somewhere is it wants to keep them. These registers are called **callee-saved** and **caller-saved** respectively. You can read about the calling convention used in Unix-like kernels (and the one we will use) at <https://en.wikipedia.org/wiki/X86_calling_conventions#System_V_AMD64_ABI>. Syscalls work the same as that: Only `rbp`, `rbx` and `r12-15` are callee-saved so we only need to save these and we can use the rest as we want. The following file in the Linux kernel also gives a nice overview: <https://github.com/torvalds/linux/blob/v3.13/arch/x86/kernel/entry_64.S#L569-L591>
+
+There is however a slight catch: The [syscall instruction](https://www.felixcloutier.com/x86/syscall) also saves the caller's `rip` into `rcx` and `rflags` into `r11`. For the [sysret instruction](https://www.felixcloutier.com/x86/sysret) to work properly we need these to be unaltered from the start of our syscall handler. Therefore we'll also save these in the stack.
+
+Let's add these things to our syscall handler. Essentially, we're doing the compiler's job and adding the [function prologue and epilogue](https://en.wikipedia.org/wiki/Function_prologue) by hand, after telling the compiler to skip the standard ones with the `#[naked]` attribute.
+
+```rust
+#[naked]
+fn handle_syscall() {
+    unsafe { asm!("\
+        push rcx // backup registers for sysretq
+        push r11
+        push rbp
+        push rbx // save callee-saved registers
+        push r12
+        push r13
+        push r14
+        push r15"
+        :::: "intel", "volatile"); }
+    unsafe { asm!("\
+        pop r15 // restore callee-saved registers
+        pop r14
+        pop r13
+        pop r12
+        pop rbx
+        pop rbp // restore stack and registers for sysretq
+        pop r11
+        pop rcx
+        sysretq // back to userland"
+        :::: "intel", "volatile"); }
+}
+```
+
+Afterwards, as we said, we want to move out of the user program's stack into a new, disposable one so that we don't leak kernel information into that stack. Where will we find the disposable one? We can just allocate some space! Then we'll move the pointer to that space into `rsp`, after which we can actually do some useful work in the syscall.
+
+Another small catch here: We want to maintain the parameters that the user program called the syscall with before calling the allocator. They are still in the registers that were passed to us: `rdi`, `rsi`, `rdx` and `r10` (other kernels might use additional, but 4 params are enough for mine). Also importantly `rax` stores the syscall number to be called and will be used to differentiate between the different syscalls in the future. The compiler doesn't know about this, so we have to do it ourselves. This is the "caller-saved" part we talked about before: We save our registers because the called function might erase them. The code will be similar to the previous piece of code.
+
+```rust
+unsafe { asm!("\
+    mov rbp, rsp // save rsp
+    sub rsp, 0x400 // make some room in the stack
+    push rax // backup syscall params while we get some stack space
+    push rdi
+    push rsi
+    push rdx
+    push r10"
+    :::: "intel", "volatile"); }
+let syscall_stack: Vec<u8> = Vec::with_capacity(0x1000);
+let stack_ptr = syscall_stack.as_ptr();
+unsafe { asm!("\
+    pop r10 // restore syscall params to their registers
+    pop rdx
+    pop rsi
+    pop rdi
+    pop rax
+    mov rsp, rbx // move our stack to the newly allocated one
+    sti // enable interrupts"
+    :: "{rbx}"(stack_ptr) : "rbx" : "intel", "volatile"); }
+```
+
+Our new stack is finally ready! We can now move out the parameters into variables in Rust so that we can do some useful work (which for now will just be printing our params). When we don't need the stack anymore, we can drop the vector. This way Rust will know when it can drop it - otherwise it might consider it useless and drop it early, or try to drop it late after we've moved `rsp` back to its original position. Both would probably cause us to crash.
+
+Here's the final code of the syscall handler, where we finally get back to kernel mode and then back again!
+
+```rust
+#[naked]
+fn handle_syscall() {
+    unsafe { asm!("\
+        push rcx // backup registers for sysretq
+        push r11
+        push rbp // save callee-saved registers
+        push rbx
+        push r12
+        push r13
+        push r14
+        push r15
+        mov rbp, rsp // save rsp
+        sub rsp, 0x400 // make some room in the stack
+        push rax // backup syscall params while we get some stack space
+        push rdi
+        push rsi
+        push rdx
+        push r10"
+        :::: "intel", "volatile"); }
+    let syscall_stack: Vec<u8> = Vec::with_capacity(0x1000);
+    let stack_ptr = syscall_stack.as_ptr();
+    unsafe { asm!("\
+        pop r10 // restore syscall params to their registers
+        pop rdx
+        pop rsi
+        pop rdi
+        pop rax
+        mov rsp, rbx // move our stack to the newly allocated one
+        sti // enable interrupts"
+        :: "{rbx}"(stack_ptr) : "rbx" : "intel", "volatile"); }
+    let syscall: u64;
+    let arg0: u64;
+    let arg1: u64;
+    let arg2: u64;
+    let arg3: u64;
+    unsafe {
+        // move the syscall arguments from registers to variables
+        asm!("nop"
+        :"={rax}"(syscall), "={rdi}"(arg0), "={rsi}"(arg1), "={rdx}"(arg2), "={r10}"(arg3) ::: "intel", "volatile");
+    }
+    println!("syscall {:x} {} {} {} {}", syscall, arg0, arg1, arg2, arg3);
+    let retval: i64 = 0; // placeholder for the syscall's return value which we need to save and then return in rax
+    unsafe { asm!("\
+        mov rbx, $0 // save return value into rbx so that it's maintained through free
+        cli" // disable interrupts while restoring the stack
+        :: "r"(retval) :: "intel", "volatile");
+    }
+    drop(syscall_stack); // we can now drop the syscall temp stack
+    unsafe { asm!("\
+        mov rax, rbx // restore syscall return value from rbx to rax
+        mov rsp, rbp // restore rsp from rbp
+        pop r15 // restore callee-saved registers
+        pop r14
+        pop r13
+        pop r12
+        pop rbx
+        pop rbp // restore stack and registers for sysretq
+        pop r11
+        pop rcx
+        sysretq // back to userland"
+        :::: "intel", "volatile"); }
+}
+```
+
+### Calling our syscall
+
+We can test our syscall with a simple user program that calls it repeatedly:
+
+```rust
+pub unsafe fn userspace_prog_1() {
+    asm!("\
+        start:
+        mov rax, 0xCA11
+        mov rdi, 10
+        mov rsi, 20
+        mov rdx, 30
+        mov r10, 40
+        syscall
+        jmp start
+    ":::: "volatile", "intel");
+}
+```
+
+And this is the result that we get:
+
+![syscalls print](/assets/images/rustos-syscall-prints.png)
+
+Finally, everything works as it should! Our syscall works and we can add additional functionalities, depending on the syscall number, such as writing a string to the screen or opening a file. That's something to do in the future, though. For now we accomplished what we set out to do.
+
+In the next part, we're going to do scheduling, so that we can run multiple processes at once.

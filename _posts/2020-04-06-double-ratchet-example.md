@@ -1,5 +1,5 @@
 ---
-title: "Implementating Signal's Double Ratchet algorithm"
+title: "Implementing Signal's Double Ratchet algorithm"
 categories: Coding Encryption Python
 tags: double-ratchet signal e2e
 ---
